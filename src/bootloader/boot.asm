@@ -1,237 +1,378 @@
-; =============================================================================
-; A simple "Hello, World!" bootloader for 16-bit real mode.
-; =============================================================================
+org 0x7C00
+bits 16
 
-org 0x7C00                  ; The BIOS loads bootloaders at memory address 0x7C00.
-bits 16                     ; We are in 16-bit real mode.
 
-%define ENDL 0x0D, 0x0A     ; Define a newline macro (Carriage Return + Line Feed).
+%define ENDL 0x0D, 0x0A
 
-#FAT12 header
-jmp short start             ; Jump over the header to executable code.
-nop                         ; Padding (2-byte jump instruction alignment).
 
-; --- BIOS Parameter Block (BPB) and FAT12 header ---
-bdb_oem:        db 'MSWIN4.1'      ; OEM identifier (8 bytes, standard label for FAT disks)
-bdb_bytes_per_sector:       dw 512  ; Standard sector size for floppy disks (512 bytes)
-bdb_sector_per_cluster:     db 1    ; One sector per cluster (common for floppies)
-bdb_reserved_sectors:       dw 1    ; The boot sector itself
-bdb_fat_count:              db 2    ; Two copies of the File Allocation Table (FAT)
-bdb_dir_entries_count:      dw 0E0h ; 224 root directory entries
-bdb_total_sectors:          dw 2880 ; 2880 * 512 = 1.44 MB total disk size
-bdb_media_descriptor_type:  db 0F0h ; 0xF0 indicates a 3.5" floppy disk
-bdb_sectors_per_fat:        dw 9    ; Each FAT table occupies 9 sectors
-bdb_sectors_per_track:      dw 18   ; 18 sectors per track (standard floppy geometry)
-bdb_heads:                  dw 2    ; 2 heads (double-sided)
-bdb_hidden_sectors:         dw 0    ; No hidden sectors on a floppy
-bdb_large_sector_count:     dd 0    ; Not used for floppies (used in larger drives)
+;
+; FAT12 header
+; 
+jmp short start
+nop
 
-#extended boot record
-edr_drive_number:           db 0    ; 0x00 for floppy drive, 0x80 for HDD
-                            db 0    ; Reserved byte (unused)
-edr_signature:              db 29h  ; Extended boot signature for FAT12
-ebr_volume_id:              db 12h, 34h, 56h, 78h ; Volume serial number (unique identifier)
-ebr_volume_label:           db 'NANOBYTE OS'      ; Volume label (11 chars, padded with spaces)
-ebr_system_id:              db 'FAT12'            ; Filesystem type identifier (8 chars)
+bdb_oem:                    db 'MSWIN4.1'           ; 8 bytes
+bdb_bytes_per_sector:       dw 512
+bdb_sectors_per_cluster:    db 1
+bdb_reserved_sectors:       dw 1
+bdb_fat_count:              db 2
+bdb_dir_entries_count:      dw 0E0h
+bdb_total_sectors:          dw 2880                 ; 2880 * 512 = 1.44MB
+bdb_media_descriptor_type:  db 0F0h                 ; F0 = 3.5" floppy disk
+bdb_sectors_per_fat:        dw 9                    ; 9 sectors/fat
+bdb_sectors_per_track:      dw 18
+bdb_heads:                  dw 2
+bdb_hidden_sectors:         dd 0
+bdb_large_sector_count:     dd 0
 
-; =============================================================================
-; CODE SECTION
-; =============================================================================
+; extended boot record
+ebr_drive_number:           db 0                    ; 0x00 floppy, 0x80 hdd, useless
+                            db 0                    ; reserved
+ebr_signature:              db 29h
+ebr_volume_id:              db 12h, 34h, 56h, 78h   ; serial number, value doesn't matter
+ebr_volume_label:           db 'NANOBYTE OS'        ; 11 bytes, padded with spaces
+ebr_system_id:              db 'FAT12   '           ; 8 bytes
+
+;
+; Code goes here
+;
 
 start:
-    jmp main    ; Jump to the main execution point. Keeps header data intact.
+    ; setup data segments
+    mov ax, 0           ; can't set ds/es directly
+    mov ds, ax
+    mov es, ax
+    
+    ; setup stack
+    mov ss, ax
+    mov sp, 0x7C00              ; stack grows downwards from where we are loaded in memory
 
-; --- puts function ---
-; Prints a null-terminated string to the screen using BIOS interrupt 0x10.
-; Input: DS:SI should point to the beginning of the string.
-; Output: None.
-; Clobbers: AX.
-puts:
-    ; Save the registers we are about to modify so we can restore them later.
-    push si
+    ; some BIOSes might start us at 07C0:0000 instead of 0000:7C00, make sure we are in the
+    ; expected location
+    push es
+    push word .after
+    retf
+
+.after:
+
+    ; read something from floppy disk
+    ; BIOS should set DL to drive number
+    mov [ebr_drive_number], dl
+
+    ; show loading message
+    mov si, msg_loading
+    call puts
+
+    ; read drive parameters (sectors per track and head count),
+    ; instead of relying on data on formatted disk
+    push es
+    mov ah, 08h
+    int 13h
+    jc floppy_error
+    pop es
+
+    and cl, 0x3F                        ; remove top 2 bits
+    xor ch, ch
+    mov [bdb_sectors_per_track], cx     ; sector count
+
+    inc dh
+    mov [bdb_heads], dh                 ; head count
+
+    ; compute LBA of root directory = reserved + fats * sectors_per_fat
+    ; note: this section can be hardcoded
+    mov ax, [bdb_sectors_per_fat]
+    mov bl, [bdb_fat_count]
+    xor bh, bh
+    mul bx                              ; ax = (fats * sectors_per_fat)
+    add ax, [bdb_reserved_sectors]      ; ax = LBA of root directory
     push ax
-    push bx ; It's good practice to save BX as int 0x10/ah=0x0e uses it.
 
-.loop:
-    lodsb       ; Load byte from [DS:SI] into AL, and increment SI.
-    or al, al   ; Check if the byte in AL is zero (the null terminator).
-    jz .done    ; If it is zero, we are done, so jump to the .done label.
+    ; compute size of root directory = (32 * number_of_entries) / bytes_per_sector
+    mov ax, [bdb_dir_entries_count]
+    shl ax, 5                           ; ax *= 32
+    xor dx, dx                          ; dx = 0
+    div word [bdb_bytes_per_sector]     ; number of sectors we need to read
 
-    mov ah, 0x0E ; BIOS teletype output function.
-    mov bh, 0x00 ; Page number.
-    mov bl, 0x07 ; Text attribute (light grey on black).
-    int 0x10     ; Call the BIOS video interrupt to print the character in AL.
+    test dx, dx                         ; if dx != 0, add 1
+    jz .root_dir_after
+    inc ax                              ; division remainder != 0, add 1
+                                        ; this means we have a sector only partially filled with entries
+.root_dir_after:
 
-    jmp .loop    ; Go back to the start of the loop to print the next character.
+    ; read root directory
+    mov cl, al                          ; cl = number of sectors to read = size of root directory
+    pop ax                              ; ax = LBA of root directory
+    mov dl, [ebr_drive_number]          ; dl = drive number (we saved it previously)
+    mov bx, buffer                      ; es:bx = buffer
+    call disk_read
 
-.done:
-    ; Restore the registers we saved at the beginning in reverse order.
-    pop bx
-    pop ax
-    pop si      ; Corrected from 'push si' to 'pop si'.
-    ret         ; Return from the function.
+    ; search for kernel.bin
+    xor bx, bx
+    mov di, buffer
+
+.search_kernel:
+    mov si, file_kernel_bin
+    mov cx, 11                          ; compare up to 11 characters
+    push di
+    repe cmpsb
+    pop di
+    je .found_kernel
+
+    add di, 32
+    inc bx
+    cmp bx, [bdb_dir_entries_count]
+    jl .search_kernel
+
+    ; kernel not found
+    jmp kernel_not_found_error
+
+.found_kernel:
+
+    ; di should have the address to the entry
+    mov ax, [di + 26]                   ; first logical cluster field (offset 26)
+    mov [kernel_cluster], ax
+
+    ; load FAT from disk into memory
+    mov ax, [bdb_reserved_sectors]
+    mov bx, buffer
+    mov cl, [bdb_sectors_per_fat]
+    mov dl, [ebr_drive_number]
+    call disk_read
+
+    ; read kernel and process FAT chain
+    mov bx, KERNEL_LOAD_SEGMENT
+    mov es, bx
+    mov bx, KERNEL_LOAD_OFFSET
+
+.load_kernel_loop:
+    
+    ; Read next cluster
+    mov ax, [kernel_cluster]
+    
+    ; not nice :( hardcoded value
+    add ax, 31                          ; first cluster = (kernel_cluster - 2) * sectors_per_cluster + start_sector
+                                        ; start sector = reserved + fats + root directory size = 1 + 18 + 134 = 33
+    mov cl, 1
+    mov dl, [ebr_drive_number]
+    call disk_read
+
+    add bx, [bdb_bytes_per_sector]
+
+    ; compute location of next cluster
+    mov ax, [kernel_cluster]
+    mov cx, 3
+    mul cx
+    mov cx, 2
+    div cx                              ; ax = index of entry in FAT, dx = cluster mod 2
+
+    mov si, buffer
+    add si, ax
+    mov ax, [ds:si]                     ; read entry from FAT table at index ax
+
+    or dx, dx
+    jz .even
+
+.odd:
+    shr ax, 4
+    jmp .next_cluster_after
+
+.even:
+    and ax, 0x0FFF
+
+.next_cluster_after:
+    cmp ax, 0x0FF8                      ; end of chain
+    jae .read_finish
+
+    mov [kernel_cluster], ax
+    jmp .load_kernel_loop
+
+.read_finish:
+    
+    ; jump to our kernel
+    mov dl, [ebr_drive_number]          ; boot device in dl
+
+    mov ax, KERNEL_LOAD_SEGMENT         ; set segment registers
+    mov ds, ax
+    mov es, ax
+
+    jmp KERNEL_LOAD_SEGMENT:KERNEL_LOAD_OFFSET
+
+    jmp wait_key_and_reboot             ; should never happen
+
+    cli                                 ; disable interrupts, this way CPU can't get out of "halt" state
+    hlt
 
 
-main:
-    ; --- Setup Segments and Stack ---
-    ; We need to initialize our segment registers to a known state.
-    mov ax, 0      ; Can't write 0 directly to a segment register.
-    mov ds, ax     ; Set Data Segment (DS) to 0.
-    mov es, ax     ; Set Extra Segment (ES) to 0.
+;
+; Error handlers
+;
 
-    ; Set up the stack to grow downwards from our code's starting address.
-    mov ss, ax     ; Set Stack Segment (SS) to 0.
-    mov sp, 0x7C00 ; Set Stack Pointer (SP) to 0x7C00.
-                   ; This ensures the stack starts right after the bootloader.
+floppy_error:
+    mov si, msg_read_failed
+    call puts
+    jmp wait_key_and_reboot
 
-    ; Read something from floppy disk.
-    ; BIOS should set DL to drive number when bootloader is loaded.
-    mov [edr_drive_number], dl   ; Save current drive number for later BIOS calls.
-
-    mov ax, 1       ; LBA = 1 (second sector of disk, after bootloader)
-    mov cl, 1       ; Read 1 sector only
-    mov bx, 0x7E00  ; Data should be loaded after bootloader (safe memory area)
-    call disk_read  ; Call disk reading routine to fetch data
-
-    ; --- Print Welcome Message ---
-    mov si, msg_hello ; Point SI to our hello world message.
-    call puts         ; Call the puts function to print it.
-
-    ; --- Halt Execution ---
-    cli               ; Disable interrupts to prevent accidental interrupts
-    hlt               ; Halt the CPU to save power and stop execution.
-
-; =============================================================================
-; ERROR HANDLERS
-; =============================================================================
-
-floopy_error:
-    mov si, msg_read_failed  ; Load address of read failure message.
-    call puts                ; Display the message on screen.
-    jmp wait_key_and_reboot  ; Wait for a keypress, then reboot.
+kernel_not_found_error:
+    mov si, msg_kernel_not_found
+    call puts
+    jmp wait_key_and_reboot
 
 wait_key_and_reboot:
     mov ah, 0
-    int 16h             ; Wait for keypress (BIOS keyboard interrupt).
-    jmp 0FFFFh:0        ; Jump to BIOS reset vector at FFFF:0000.
-    hlt                 ; Safety halt if BIOS reboot fails.
+    int 16h                     ; wait for keypress
+    jmp 0FFFFh:0                ; jump to beginning of BIOS, should reboot
 
 .halt:
-    cli                 ; Disable interrupts, CPU cannot escape halt state.
+    cli                         ; disable interrupts, this way CPU can't get out of "halt" state
     hlt
 
-; =============================================================================
-; DISK ROUTINES
-; =============================================================================
 
+;
+; Prints a string to the screen
+; Params:
+;   - ds:si points to string
+;
+puts:
+    ; save registers we will modify
+    push si
+    push ax
+    push bx
+
+.loop:
+    lodsb               ; loads next character in al
+    or al, al           ; verify if next character is null?
+    jz .done
+
+    mov ah, 0x0E        ; call bios interrupt
+    mov bh, 0           ; set page number to 0
+    int 0x10
+
+    jmp .loop
+
+.done:
+    pop bx
+    pop ax
+    pop si    
+    ret
+
+;
+; Disk routines
+;
+
+;
 ; Converts an LBA address to a CHS address
 ; Parameters:
-;   ax: LBA address
+;   - ax: LBA address
 ; Returns:
-;   cx [bits 0-5]: sector number
-;   cx [bits 6-15]: cylinder
-;   dh: head
+;   - cx [bits 0-5]: sector number
+;   - cx [bits 6-15]: cylinder
+;   - dh: head
 ;
+
 lba_to_chs:
 
-    push ax                      ; Preserve LBA value
+    push ax
     push dx
 
-    xor dx, dx                   ; Clear DX before division
-    div word [bdb_sectors_per_track] ; Divide LBA by sectors/track
-                                    ; AX = LBA / sectors_per_track (temp quotient)
-                                    ; DX = LBA % sectors_per_track (remainder = sector)
-    inc dx                       ; Sector numbers start at 1, not 0.
-    mov cx, dx                   ; Store sector number in CX.
+    xor dx, dx                          ; dx = 0
+    div word [bdb_sectors_per_track]    ; ax = LBA / SectorsPerTrack
+                                        ; dx = LBA % SectorsPerTrack
 
-    xor dx, dx
-    div word [bdb_heads]         ; Divide quotient by heads.
-                                 ; AX = cylinder number
-                                 ; DX = head number
-    mov dh, dl                   ; DH = head value.
-    mov ch, al                   ; CH = cylinder low 8 bits.
-    shl ah, 6                    ; Shift upper 2 bits of cylinder into position.
-    or cl, ah                    ; Combine them with CL (sector + upper cylinder bits).
+    inc dx                              ; dx = (LBA % SectorsPerTrack + 1) = sector
+    mov cx, dx                          ; cx = sector
+
+    xor dx, dx                          ; dx = 0
+    div word [bdb_heads]                ; ax = (LBA / SectorsPerTrack) / Heads = cylinder
+                                        ; dx = (LBA / SectorsPerTrack) % Heads = head
+    mov dh, dl                          ; dh = head
+    mov ch, al                          ; ch = cylinder (lower 8 bits)
+    shl ah, 6
+    or cl, ah                           ; put upper 2 bits of cylinder in CL
 
     pop ax
-    mov dl, al                   ; Restore drive number in DL (if BIOS overwrote)
+    mov dl, al                          ; restore DL
     pop ax
-    ret 
+    ret
 
-; -----------------------------------------------------------------------------
-; Reads sectors from a disk using BIOS interrupt 13h.
+
+;
+; Reads sectors from a disk
 ; Parameters:
-;   ax: LBA address
-;   cl: number of sectors to read (up to 128)
-;   dl: drive number
-;   es:bx: memory address where to store read data
-; -----------------------------------------------------------------------------
+;   - ax: LBA address
+;   - cl: number of sectors to read (up to 128)
+;   - dl: drive number
+;   - es:bx: memory address where to store read data
+;
 disk_read:
 
-    push ax             ; Save registers we will modify
+    push ax                             ; save registers we will modify
     push bx
     push cx
     push dx
-    push di 
+    push di
 
-    push cx                 ; Temporarily save CL (sector count)
-    call lba_to_chs         ; Convert LBA to CHS before calling BIOS
-    pop ax                  ; AL = number of sectors to read
-
-    mov ah, 02h             ; BIOS function: Read sectors (INT 13h, AH=02h)
-    mov di, 3               ; Retry count (3 times before giving up)
+    push cx                             ; temporarily save CL (number of sectors to read)
+    call lba_to_chs                     ; compute CHS
+    pop ax                              ; AL = number of sectors to read
+    
+    mov ah, 02h
+    mov di, 3                           ; retry count
 
 .retry:
-    pusha                   ; Save all general registers (BIOS may change them)
-    stc                     ; Set Carry Flag (some BIOSes fail to clear it on error)
-    int 13h                 ; BIOS Disk Service: read sectors into ES:BX
-    jnc .done               ; Jump if no error (Carry cleared = success)
+    pusha                               ; save all registers, we don't know what bios modifies
+    stc                                 ; set carry flag, some BIOS'es don't set it
+    int 13h                             ; carry flag cleared = success
+    jnc .done                           ; jump if carry not set
 
-    ; Read failed
+    ; read failed
     popa
-    call disk_reset         ; Attempt to reset disk and try again
+    call disk_reset
 
-    dec di                  ; Decrement retry counter
-    test di, di             ; Check if retries remain
-    jnz .retry              ; If yes, retry the operation
+    dec di
+    test di, di
+    jnz .retry
 
 .fail:
-    ; All attempts exhausted, show error message
-    jmp floopy_error
+    ; all attempts are exhausted
+    jmp floppy_error
 
 .done:
-    popa                    ; Restore register state
+    popa
 
-    ; Restore registers in reverse order
     pop di
     pop dx
     pop cx
     pop bx
-    pop ax
+    pop ax                             ; restore registers modified
     ret
 
-; -----------------------------------------------------------------------------
-; Reset disk controller using BIOS interrupt 13h function 00h.
-; -----------------------------------------------------------------------------
+
+;
+; Resets disk controller
+; Parameters:
+;   dl: drive number
+;
 disk_reset:
     pusha
-    mov ah, 0               ; AH=0 resets the disk system
-    stc                     ; Set Carry Flag (for consistency)
-    int 13h                 ; BIOS call: reset disk
-    jc floopy_error         ; If Carry still set, reset failed
+    mov ah, 0
+    stc
+    int 13h
+    jc floppy_error
     popa
     ret
 
-; =============================================================================
-; DATA SECTION
-; =============================================================================
-msg_hello: db 'Hello, world!', ENDL, 0          ; Null-terminated print string.
-msg_read_failed: db 'Read from disk failed!', ENDL, 0 ; Error message.
 
-; =============================================================================
-; BOOTLOADER SIGNATURE
-; The BIOS checks for the word 0xAA55 at the end of the first sector to
-; recognize a valid bootable disk. This must appear at offset 510.
-; =============================================================================
-times 510-($-$$) db 0         ; Pad remaining bytes of the 512-byte sector with zeros.
-dw 0xAA55                     ; Boot signature (must be last two bytes).
+msg_loading:            db 'Loading...', ENDL, 0
+msg_read_failed:        db 'Read from disk failed!', ENDL, 0
+msg_kernel_not_found:   db 'KERNEL.BIN file not found!', ENDL, 0
+file_kernel_bin:        db 'KERNEL  BIN'
+kernel_cluster:         dw 0
+
+KERNEL_LOAD_SEGMENT     equ 0x2000
+KERNEL_LOAD_OFFSET      equ 0
+
+
+times 510-($-$$) db 0
+dw 0AA55h
+
+buffer:
