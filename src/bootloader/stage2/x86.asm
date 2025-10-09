@@ -1,65 +1,75 @@
-; ===============================================
-; x86_Video_WriteCharTeletype
-; -----------------------------------------------
-; Description:
-;   Prints a single character on the screen using
-;   BIOS interrupt 0x10, function 0x0E (teletype mode).
-;
-; Calling convention:
-;   _cdecl (C standard calling convention)
-;
-; Parameters (stack layout, small memory model):
-;   [BP + 0] → previous BP (saved frame pointer)
-;   [BP + 2] → return address
-;   [BP + 4] → character (char c)
-;   [BP + 6] → page number (byte page)
-;
-; Notes:
-;   - Uses INT 10h AH=0Eh to print a character.
-;   - Advances cursor automatically.
-;   - This is used by putc() and puts() in C.
-; ===============================================
+bits 16
 
-bits 16                         ; Assemble for 16-bit real mode
+section _TEXT class=CODE
 
-section _TEXT class=CODE         ; Define code section
+;
+; void _cdecl x86_div64_32(uint64_t dividend, uint32_t divisor, uint64_t* quotientOut, uint32_t* remainderOut);
+;
+global _x86_div64_32
+_x86_div64_32:
 
+    ; make new call frame
+    push bp             ; save old call frame
+    mov bp, sp          ; initialize new call frame
+
+    push bx
+
+    ; divide upper 32 bits
+    mov eax, [bp + 8]   ; eax <- upper 32 bits of dividend
+    mov ecx, [bp + 12]  ; ecx <- divisor
+    xor edx, edx
+    div ecx             ; eax - quot, edx - remainder
+
+    ; store upper 32 bits of quotient
+    mov bx, [bp + 16]
+    mov [bx + 4], eax
+
+    ; divide lower 32 bits
+    mov eax, [bp + 4]   ; eax <- lower 32 bits of dividend
+                        ; edx <- old remainder
+    div ecx
+
+    ; store results
+    mov [bx], eax
+    mov bx, [bp + 18]
+    mov [bx], edx
+
+    pop bx
+
+    ; restore old call frame
+    mov sp, bp
+    pop bp
+    ret
+
+;
+; int 10h ah=0Eh
+; args: character, page
+;
 global _x86_Video_WriteCharTeletype
 _x86_Video_WriteCharTeletype:
+    
+    ; make new call frame
+    push bp             ; save old call frame
+    mov bp, sp          ; initialize new call frame
 
-    ; -------------------------------------------
-    ; Prologue: set up call frame
-    ; -------------------------------------------
-    push bp                     ; Save previous base pointer
-    mov bp, sp                  ; Establish new stack frame
+    ; save bx
+    push bx
 
-    ; -------------------------------------------
-    ; Save registers we’ll modify
-    ; -------------------------------------------
-    push bx                     ; BIOS call modifies BX, so preserve it
+    ; [bp + 0] - old call frame
+    ; [bp + 2] - return address (small memory model => 2 bytes)
+    ; [bp + 4] - first argument (character)
+    ; [bp + 6] - second argument (page)
+    ; note: bytes are converted to words (you can't push a single byte on the stack)
+    mov ah, 0Eh
+    mov al, [bp + 4]
+    mov bh, [bp + 6]
 
-    ; -------------------------------------------
-    ; Retrieve parameters from stack
-    ; -------------------------------------------
-    ; Stack layout:
-    ;   [BP + 4] = character (char c)
-    ;   [BP + 6] = page number
-    ;
-    ; AH = 0x0E (BIOS teletype output function)
-    ; AL = character to print
-    ; BH = display page number
-    ; BIOS interrupt: INT 10h
-    mov ah, 0Eh                 ; Select teletype output function
-    mov al, [bp + 4]            ; Load character into AL
-    mov bh, [bp + 6]            ; Load page number into BH
+    int 10h
 
-    int 10h                     ; Call BIOS interrupt for video output
+    ; restore bx
+    pop bx
 
-    ; -------------------------------------------
-    ; Epilogue: restore registers and stack
-    ; -------------------------------------------
-    pop bx                      ; Restore BX register
-
-    mov sp, bp                  ; Reset stack pointer
-    pop bp                      ; Restore previous base pointer
-    ret                         ; Return to caller
+    ; restore old call frame
+    mov sp, bp
+    pop bp
+    ret
