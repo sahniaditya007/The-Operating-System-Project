@@ -1,12 +1,20 @@
+# Build artifacts and output directories
 build/
+build-binutils/
+build-utils/
+
+# Toolchain and source directories
 toolchain/
 toolchain_src/
-*.err
-bx_enh_dbg.ini
-.vscode/*.log
-.sconsign.dblite
-__pycache__/
 cross-toolchain/
-build-utils/
-build-binutils/
+
+# Python cache
+__pycache__/
+
+# Log and temporary files
+*.err
+.sconsign.dblite
+bx_enh_dbg.ini
+
+# IDE/Editor-specific files (VSCode)
 .vscode/
