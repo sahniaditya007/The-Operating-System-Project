@@ -55,8 +55,7 @@ def IsFileName(obj, name):
         return obj.name == name
     return False
 
-
-def RemoveSuffix(str, suffix):
+    def RemoveSuffix(str, suffix):
     if str.endswith(suffix):
         return str[:-len(suffix)]
     return str
