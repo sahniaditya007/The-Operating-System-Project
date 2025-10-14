@@ -1,4 +1,3 @@
-
 %macro x86_EnterRealMode 0
     [bits 32]
     jmp word 18h:.pmode16         ; 1 - jump to 16-bit protected mode segment

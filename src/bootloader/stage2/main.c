@@ -6,11 +6,18 @@
 #include "memdefs.h"
 #include "memory.h"
 #include "mbr.h"
+#include "stdlib.h"
+#include "string.h"
+#include "elf.h"
+#include "memdetect.h"
+#include <boot/bootparams.h>
 
 uint8_t* KernelLoadBuffer = (uint8_t*)MEMORY_LOAD_KERNEL;
 uint8_t* Kernel = (uint8_t*)MEMORY_KERNEL_ADDR;
 
-typedef void (*KernelStart)();
+BootParams g_BootParams;
+
+typedef void (*KernelStart)(BootParams* bootParams);
 
 void __attribute__((cdecl)) start(uint16_t bootDrive, void* partition)
 {
@@ -32,20 +39,20 @@ void __attribute__((cdecl)) start(uint16_t bootDrive, void* partition)
         goto end;
     }
 
+    // prepare boot params
+    g_BootParams.BootDevice = bootDrive;
+    Memory_Detect(&g_BootParams.Memory);
+
     // load kernel
-    FAT_File* fd = FAT_Open(&part, "/boot/kernel.bin");
-    uint32_t read;
-    uint8_t* kernelBuffer = Kernel;
-    while ((read = FAT_Read(&part, fd, MEMORY_LOAD_SIZE, KernelLoadBuffer)))
+    KernelStart kernelEntry;
+    if (!ELF_Read(&part, "/boot/kernel.elf", (void**)&kernelEntry))
     {
-        memcpy(kernelBuffer, KernelLoadBuffer, read);
-        kernelBuffer += read;
+        printf("ELF read failed, booting halted!");
+        goto end;
     }
-    FAT_Close(fd);
 
     // execute kernel
-    KernelStart kernelStart = (KernelStart)Kernel;
-    kernelStart();
+    kernelEntry(&g_BootParams);
 
 end:
     for (;;);
