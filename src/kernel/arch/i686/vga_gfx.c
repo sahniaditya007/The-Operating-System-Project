@@ -4,7 +4,11 @@
 static uint8_t* g_vga_buffer = (uint8_t*)0xA0000;
 
 void vga_set_mode(int mode) {
-    __asm__ __volatile__("int $0x10" : : "a"(mode));
+    // BIOS video interrupts (int 0x10) are not available in protected mode.
+    // Setting VGA mode should be done either in the bootloader (real mode)
+    // or by directly programming VGA registers here. For now, this is a no-op
+    // to avoid faulting on vector 0x10 (which maps to x87 exception in our IDT).
+    (void)mode;
 }
 
 void vga_put_pixel(int x, int y, uint8_t color) {

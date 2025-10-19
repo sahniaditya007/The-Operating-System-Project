@@ -88,6 +88,10 @@ section .entry
 
     .after:
 
+        ; set video mode 0x13 (320x200x256) in real mode for graphics
+        mov ax, 0x0013
+        int 0x10
+
         ; read something from floppy disk
         ; BIOS should set DL to drive number
         mov [ebr_drive_number], dl

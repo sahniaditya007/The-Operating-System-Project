@@ -75,12 +75,11 @@ void start(BootParams* bootParams)
 
 
 
-    // Initialize the Hardware Abstraction Layer (HAL).
-
-    HAL_Initialize();
-
     // Initialize Floating Point Unit to prevent x87 exceptions.
     i686_FPU_Initialize();
+
+    // Initialize the Hardware Abstraction Layer (HAL).
+    HAL_Initialize();
 
     mouse_install();
 
