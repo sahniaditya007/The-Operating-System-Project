@@ -6,6 +6,8 @@ from decimal import Decimal
 from io import SEEK_CUR, SEEK_SET
 from pathlib import Path
 from shutil import copy2
+import shutil
+import tempfile
 import parted
 
 from SCons.Action import Action
@@ -205,6 +207,39 @@ def build_image(target, source, env):
         build_floppy(image, stage1, stage2, kernel, files, env)
     elif env['imageType'] == 'disk':
         build_disk(image, stage1, stage2, kernel, files, env)
+    elif env['imageType'] == 'iso':
+        # Create temporary floppy image to hold boot sector and files
+        with tempfile.TemporaryDirectory() as td:
+            tmp_floppy = os.path.join(td, 'boot.img')
+            print(f"> creating temporary floppy image {tmp_floppy} for ISO boot...")
+            build_floppy(tmp_floppy, stage1, stage2, kernel, files, env)
+
+            # Try to create El Torito bootable ISO using xorriso or mkisofs/genisoimage
+            iso_tool = None
+            for cmd in ("xorriso", "genisoimage", "mkisofs"):
+                if shutil.which(cmd):
+                    iso_tool = cmd
+                    break
+            if iso_tool is None:
+                raise RuntimeError('No ISO creation tool found (xorriso/genisoimage/mkisofs required)')
+
+            # Commands expect the boot image path relative to CWD; ensure we call from temp dir
+            cwd = os.getcwd()
+            try:
+                os.chdir(td)
+                if iso_tool == 'xorriso':
+                    subprocess.run([iso_tool, '-as', 'mkisofs', '-o', os.path.join(cwd, image),
+                                    '-V', 'NBOS', '-r', '-J',
+                                    '-b', 'boot.img',
+                                    '-no-emul-boot', '-boot-load-size', '4',
+                                    '-boot-info-table', 'boot.img', '.'], check=True)
+                else:
+                    subprocess.run([iso_tool, '-o', os.path.join(cwd, image), '-V', 'NBOS', '-r', '-J',
+                                    '-b', 'boot.img',
+                                    '-no-emul-boot', '-boot-load-size', '4',
+                                    '-boot-info-table', 'boot.img', '.'], check=True)
+            finally:
+                os.chdir(cwd)
     else:
         raise ValueError('Unknown image type ' + env['imageType'])
 
@@ -214,7 +249,11 @@ root = env.Dir('root')
 root_content = GlobRecursive(env, '*', root)
 inputs = [stage1, stage2, kernel] + root_content
 
+# if env['imageType'] == 'qcow3':
+#     output_fmt = 'qcow3'
 output_fmt = 'img'
+if env['imageType'] == 'iso':
+    output_fmt = 'iso'
 # if env['imageType'] == 'qcow3':
 #     output_fmt = 'qcow3'
 

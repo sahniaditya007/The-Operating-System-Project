@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import sys
 from SCons.Variables import *
 from SCons.Environment import *
 from SCons.Node import *
@@ -21,7 +22,7 @@ VARS.AddVariables(
     EnumVariable("imageType",
                  help="Type of image",
                  default="disk",
-                 allowed_values=("floppy", "disk")),
+                 allowed_values=("floppy", "disk", "iso")),
 
     EnumVariable("imageFS",
                  help="Type of image",
@@ -184,7 +185,8 @@ if HOST_ENVIRONMENT['buildImage']:
                  run=['./scripts/run.sh', HOST_ENVIRONMENT['imageType'], image[0].path],
                  debug=['./scripts/debug.sh', HOST_ENVIRONMENT['imageType'], image[0].path],
                  bochs=['./scripts/bochs.sh', HOST_ENVIRONMENT['imageType'], image[0].path],
-                 toolchain=['./scripts/setup_toolchain.sh', HOST_ENVIRONMENT['toolchain']])
+                 toolchain=['./scripts/setup_toolchain.sh', HOST_ENVIRONMENT['toolchain']],
+                 demo=[sys.executable, '-m', 'demo.main'])
 
     Depends('run', image)
     Depends('debug', image)
