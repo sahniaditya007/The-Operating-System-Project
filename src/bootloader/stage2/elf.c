@@ -1,7 +1,7 @@
 #include "elf.h"
 #include "fat.h"
 #include "memdefs.h"
-#include "memory.h"
+#include "string/string.h"
 #include "minmax.h"
 #include "stdio.h"
 

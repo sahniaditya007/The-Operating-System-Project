@@ -1,22 +1,19 @@
+/**
+ * @file gdt.c
+ * @brief This file contains the implementation of the Global Descriptor Table (GDT).
+ */
+
 #include "gdt.h"
+
+void __attribute__((cdecl)) i686_GDT_Load(GDTDescriptor* descriptor, uint16_t codeSegment, uint16_t dataSegment);
+#include "gdt_idt_asm.h"
 #include <stdint.h>
 
-typedef struct
-{
-    uint16_t LimitLow;                  // limit (bits 0-15)
-    uint16_t BaseLow;                   // base (bits 0-15)
-    uint8_t BaseMiddle;                 // base (bits 16-23)
-    uint8_t Access;                     // access
-    uint8_t FlagsLimitHi;               // limit (bits 16-19) | flags
-    uint8_t BaseHigh;                   // base (bits 24-31)
-} __attribute__((packed)) GDTEntry;
 
-typedef struct
-{
-    uint16_t Limit;                     // sizeof(gdt) - 1
-    GDTEntry* Ptr;                      // address of GDT
-} __attribute__((packed)) GDTDescriptor;
 
+/**
+ * @brief GDT access flags.
+ */
 typedef enum
 {
     GDT_ACCESS_CODE_READABLE                = 0x02,
@@ -40,6 +37,9 @@ typedef enum
 
 } GDT_ACCESS;
 
+/**
+ * @brief GDT flags.
+ */
 typedef enum 
 {
     GDT_FLAG_64BIT                          = 0x20,
@@ -50,7 +50,7 @@ typedef enum
     GDT_FLAG_GRANULARITY_4K                 = 0x80,
 } GDT_FLAGS;
 
-// Helper macros
+// Helper macros to create GDT entries.
 #define GDT_LIMIT_LOW(limit)                (limit & 0xFFFF)
 #define GDT_BASE_LOW(base)                  (base & 0xFFFF)
 #define GDT_BASE_MIDDLE(base)               ((base >> 16) & 0xFF)
@@ -66,6 +66,7 @@ typedef enum
     GDT_BASE_HIGH(base)                                             \
 }
 
+// The Global Descriptor Table.
 GDTEntry g_GDT[] = {
     // NULL descriptor
     GDT_ENTRY(0, 0, 0, 0),
@@ -84,11 +85,17 @@ GDTEntry g_GDT[] = {
 
 };
 
+// The GDT descriptor.
 GDTDescriptor g_GDTDescriptor = { sizeof(g_GDT) - 1, g_GDT};
 
-void __attribute__((cdecl)) i686_GDT_Load(GDTDescriptor* descriptor, uint16_t codeSegment, uint16_t dataSegment);
+// External function to load the GDT.
 
+
+/**
+ * @brief Initializes the GDT.
+ */
 void i686_GDT_Initialize()
 {
+    // Load the GDT.
     i686_GDT_Load(&g_GDTDescriptor, i686_GDT_CODE_SEGMENT, i686_GDT_DATA_SEGMENT);
 }

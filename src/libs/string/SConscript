@@ -1,5 +1,4 @@
 from SCons.Environment import Environment
-
 from build_scripts.utility import GlobRecursive
 
 Import('TARGET_ENVIRONMENT')
@@ -8,21 +7,15 @@ TARGET_ENVIRONMENT: Environment
 env = TARGET_ENVIRONMENT.Clone()
 
 env.Append(
-    ASFLAGS=[
-        '-I', env.Dir('.').srcnode(),
-    ],
     CPPPATH=[
         env.Dir('.').srcnode(),
     ],
 )
 
-sources = GlobRecursive(env, '*.c') + \
-          GlobRecursive(env, '*.cpp') + \
-          GlobRecursive(env, '*.asm')
+sources = GlobRecursive(env, '*.c')
 
 objects = env.Object(sources)
 
-libcore = env.Library('core', objects)
+libstring = env.Library('string', objects)
 
-Export('libcore')
-
+Export('libstring')

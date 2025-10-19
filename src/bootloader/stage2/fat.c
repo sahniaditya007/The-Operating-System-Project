@@ -1,8 +1,8 @@
+#include "string.h"
 #include "fat.h"
 #include "stdio.h"
 #include "memdefs.h"
-#include "string.h"
-#include "memory.h"
+#include "string/string.h"
 #include "ctype.h"
 #include <stddef.h>
 #include "minmax.h"

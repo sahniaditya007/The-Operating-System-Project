@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 from SCons.Variables import *
 from SCons.Environment import *
 from SCons.Node import *
@@ -35,7 +36,14 @@ VARS.Add("imageSize",
          converter=ParseSize)
 VARS.Add("toolchain", 
          help="Path to toolchain directory.",
-         default="toolchain")
+         default="cross-toolchain")
+
+# Optionally skip image generation (useful on Windows without mkfs tools)
+VARS.AddVariables(
+    BoolVariable("buildImage",
+                 help="Build disk/floppy image",
+                 default=True)
+)
 
 DEPS = {
     'binutils': '2.37',
@@ -90,9 +98,21 @@ platform_prefix = ''
 if HOST_ENVIRONMENT['arch'] == 'i686':
     platform_prefix = 'i686-elf-'
 
-toolchainDir = Path(HOST_ENVIRONMENT['toolchain'], RemoveSuffix(platform_prefix, '-')).resolve()
+target_triple = RemoveSuffix(platform_prefix, '-')
+
+# Toolchain layout: use top-level cross-toolchain as root
+toolchainDir = Path(HOST_ENVIRONMENT['toolchain']).resolve()
 toolchainBin = Path(toolchainDir, 'bin')
-toolchainGccLibs = Path(toolchainDir, 'lib', 'gcc', RemoveSuffix(platform_prefix, '-'), DEPS['gcc'])
+toolchainBinAlt = Path(toolchainDir, target_triple, 'bin')
+
+# Detect installed GCC lib directory inside the toolchain dynamically
+gcc_target_dir = Path(toolchainDir, 'lib', 'gcc', target_triple)
+gcc_versions = []
+if gcc_target_dir.exists():
+    for p in gcc_target_dir.iterdir():
+        if p.is_dir():
+            gcc_versions.append(p)
+toolchainGccLibs = max(gcc_versions) if gcc_versions else Path(gcc_target_dir, DEPS['gcc'])
 
 TARGET_ENVIRONMENT = HOST_ENVIRONMENT.Clone(
     AR = f'{platform_prefix}ar',
@@ -124,13 +144,16 @@ TARGET_ENVIRONMENT.Append(
         '-fno-rtti',
     ],
     LINKFLAGS = [
-        '-nostdlib'
+        '-nostdlib',
+        '-Wl,--verbose'
     ],
     LIBS = ['gcc'],
     LIBPATH = [ str(toolchainGccLibs) ],
 )
 
 TARGET_ENVIRONMENT['ENV']['PATH'] += os.pathsep + str(toolchainBin)
+if toolchainBinAlt.exists():
+    TARGET_ENVIRONMENT['ENV']['PATH'] += os.pathsep + str(toolchainBinAlt)
 
 Help(VARS.GenerateHelpText(HOST_ENVIRONMENT))
 Export('HOST_ENVIRONMENT')
@@ -140,22 +163,32 @@ variantDir = 'build/{0}_{1}'.format(TARGET_ENVIRONMENT['arch'], TARGET_ENVIRONME
 variantDirStage1 = variantDir + '/stage1_{0}'.format(TARGET_ENVIRONMENT['imageFS'])
 
 SConscript('src/libs/core/SConscript', variant_dir=variantDir + '/libs/core', duplicate=0)
+SConscript('src/libs/string/SConscript', variant_dir=variantDir + '/libs/string', duplicate=0)
+
 
 SConscript('src/bootloader/stage1/SConscript', variant_dir=variantDirStage1, duplicate=0)
 SConscript('src/bootloader/stage2/SConscript', variant_dir=variantDir + '/stage2', duplicate=0)
 SConscript('src/kernel/SConscript', variant_dir=variantDir + '/kernel', duplicate=0)
-SConscript('image/SConscript', variant_dir=variantDir, duplicate=0)
-
-Import('image')
-Default(image)
+if HOST_ENVIRONMENT['buildImage']:
+    SConscript('image/SConscript', variant_dir=variantDir, duplicate=0)
+    Import('image')
+    Default(image)
+else:
+    # No image build: default to building kernel
+    Import('kernel_stripped')
+    Default(kernel_stripped)
 
 # Phony targets
-PhonyTargets(HOST_ENVIRONMENT, 
-             run=['./scripts/run.sh', HOST_ENVIRONMENT['imageType'], image[0].path],
-             debug=['./scripts/debug.sh', HOST_ENVIRONMENT['imageType'], image[0].path],
-             bochs=['./scripts/bochs.sh', HOST_ENVIRONMENT['imageType'], image[0].path],
-             toolchain=['./scripts/setup_toolchain.sh', HOST_ENVIRONMENT['toolchain']])
+if HOST_ENVIRONMENT['buildImage']:
+    PhonyTargets(HOST_ENVIRONMENT, 
+                 run=['./scripts/run.sh', HOST_ENVIRONMENT['imageType'], image[0].path],
+                 debug=['./scripts/debug.sh', HOST_ENVIRONMENT['imageType'], image[0].path],
+                 bochs=['./scripts/bochs.sh', HOST_ENVIRONMENT['imageType'], image[0].path],
+                 toolchain=['./scripts/setup_toolchain.sh', HOST_ENVIRONMENT['toolchain']])
 
-Depends('run', image)
-Depends('debug', image)
-Depends('bochs', image)
+    Depends('run', image)
+    Depends('debug', image)
+    Depends('bochs', image)
+else:
+    PhonyTargets(HOST_ENVIRONMENT,
+                 toolchain=['./scripts/setup_toolchain.sh', HOST_ENVIRONMENT['toolchain']])

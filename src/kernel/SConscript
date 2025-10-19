@@ -17,21 +17,37 @@ env.Append(
         env.Dir('.').srcnode(),
         env['PROJECTDIR'].Dir('src/libs')
     ],
-    ASFLAGS = [ '-I', env.Dir('.').srcnode(), '-f', 'elf' ]
+    ASFLAGS = [ '-I', env.Dir('.').srcnode(), '-I', env.Dir('arch/i686').srcnode(), '-f', 'elf' ]
 )
 
-sources = GlobRecursive(env, '*.c') + \
-          GlobRecursive(env, '*.cpp') + \
-          GlobRecursive(env, '*.asm')
+def flatten(nested):
+    flat = []
+    for group in nested:
+        if isinstance(group, list):
+            flat.extend(group)
+        else:
+            flat.append(group)
+    return flat
+
+c_sources = flatten(GlobRecursive(env, '*.c'))
+cpp_sources = flatten(GlobRecursive(env, '*.cpp'))
+asm_sources = flatten(GlobRecursive(env, '*.asm'))
+
+# Prefer C entrypoint and exclude legacy main.asm to avoid duplicate main.o
+asm_sources = [node for node in asm_sources if not IsFileName(node, 'main.asm') and not IsFileName(node, 'isrs_gen.asm')]
+
+sources = c_sources + cpp_sources + asm_sources
 
 objects = env.Object(sources)
 obj_crti = objects.pop(FindIndex(objects, lambda item: IsFileName(item, 'crti.o')))
 obj_crtn = objects.pop(FindIndex(objects, lambda item: IsFileName(item, 'crtn.o')))
 
 Import('libcore')
+Import('libstring')
 
 static_libs = [
     libcore,
+    libstring,
 ]
 
 objects = [

@@ -1,12 +1,12 @@
 import os
 import re
 import time
+import subprocess
 from decimal import Decimal
 from io import SEEK_CUR, SEEK_SET
 from pathlib import Path
 from shutil import copy2
 import parted
-import sh
 
 from SCons.Action import Action
 from SCons.Builder import Builder
@@ -35,19 +35,15 @@ def create_filesystem(target: str, filesystem, reserved_sectors=0, offset=0):
         if filesystem == 'fat32':
             reserved_sectors += 1
 
-        mkfs_fat = sh.Command('mkfs.fat')
-        mkfs_fat(target,
-                 F=filesystem[3:],            # fat size
-                 n='NBOS',                    # label
-                 R=reserved_sectors,      # reserved sectors
-                 offset=offset
-        )
+        subprocess.run(['mkfs.fat', target, 
+                       f'-F{filesystem[3:]}',          # fat size
+                       '-nNBOS',                       # label
+                       f'-R{reserved_sectors}',        # reserved sectors
+                       f'--offset={offset}'], check=True)
     elif filesystem == 'ext2':
-        mkfs_ext2 = sh.Command('mkfs.ext2')
-        mkfs_ext2(target,
-                  L='NBOS',                   # label
-                  E=f'offset={offset * SECTOR_SIZE}'
-        )
+        subprocess.run(['mkfs.ext2', target,
+                       '-LNBOS',                          # label
+                       f'-Eoffset={offset * SECTOR_SIZE}'], check=True)
     else:
         raise ValueError('Unsupported filesystem ' + filesystem)
 
@@ -119,8 +115,8 @@ def build_floppy(image, stage1, stage2, kernel, files, env):
 
     print(f"> copying files...")
     print('    ... copying', kernel)
-    sh.mmd('-i', image, "::boot")
-    sh.mcopy('-i', image, kernel, "::boot/")
+    subprocess.run(['mmd', '-i', image, '::boot'], check=True)
+    subprocess.run(['mcopy', '-i', image, kernel, '::boot/'], check=True)
 
     # copy rest of files
     src_root = env['BASEDIR']
@@ -131,10 +127,10 @@ def build_floppy(image, stage1, stage2, kernel, files, env):
 
         if os.path.isdir(file_src):
             print('    ... creating directory', file_rel)
-            sh.mmd('-i', image, file_dst)
+            subprocess.run(['mmd', '-i', image, file_dst], check=True)
         else:
             print('    ... copying', file_rel)
-            sh.mcopy('-i', image, file_src, file_dst)
+            subprocess.run(['mcopy', '-i', image, file_src, file_dst], check=True)
 
 
 def create_partition_table(target: str, align_start: int):
@@ -148,12 +144,7 @@ def create_partition_table(target: str, align_start: int):
     disk.commit()
 
 
-def mount_fs(image: str, mount_dir: str):
-    sh.guestmount(mount_dir, add=image, mount='/dev/sda1')
 
-def unmount_fs(mount_dir: str):
-    time.sleep(3)
-    sh.fusermount(u=mount_dir)
 
 
 def build_disk(image, stage1, stage2, kernel, files, env):
@@ -183,43 +174,24 @@ def build_disk(image, stage1, stage2, kernel, files, env):
     print(f"> installing stage2...")
     install_stage2(image, stage2, offset=1, limit=partition_offset)
 
-    tempdir_name = 'tmp_mount_{0}'.format(int(time.time()))
-    tempdir = os.path.join(os.path.dirname(image), tempdir_name)
-    try:
-        # mount
-        os.mkdir(tempdir)
+    print(f"> copying files...")
+    print('    ... copying', kernel)
+    subprocess.run(['mmd', '-i', image + '@@' + str(partition_offset * SECTOR_SIZE), '::boot'], check=True)
+    subprocess.run(['mcopy', '-i', image + '@@' + str(partition_offset * SECTOR_SIZE), kernel, '::boot/'])
 
-        print(f"> mounting image to {tempdir}...")
-        mount_fs(image, tempdir)
+    # copy rest of files
+    src_root = env['BASEDIR']
+    for file in files:
+        file_src = file.srcnode().path
+        file_rel = os.path.relpath(file_src, src_root)
+        file_dst = '::' + file_rel
 
-        # copy kernel
-        print(f"> copying kernel...")
-        bootdir = os.path.join(tempdir, 'boot')
-        os.makedirs(bootdir)
-        copy2(kernel, bootdir)
-
-        # copy rest of files
-        src_root = env['BASEDIR']
-        print(f"> copying files...")
-        for file in files:
-            file_src = file.srcnode().path
-            file_rel = os.path.relpath(file_src, src_root)
-            file_dst = os.path.join(tempdir, file_rel)
-
-            if os.path.isdir(file_src):
-                print('    ... creating directory', file_rel)
-                os.makedirs(file_dst)
-            else:
-                print('    ... copying', file_rel)
-                copy2(file_src, file_dst)
-
-    finally:
-        print("> cleaning up...")
-        try:
-            unmount_fs(tempdir)
-        except:
-            pass
-        os.rmdir(tempdir)
+        if os.path.isdir(file_src):
+            print('    ... creating directory', file_rel)
+            subprocess.run(['mmd', '-i', image + '@@' + str(partition_offset * SECTOR_SIZE), file_dst], check=True)
+        else:
+            print('    ... copying', file_rel)
+            subprocess.run(['mcopy', '-i', image + '@@' + str(partition_offset * SECTOR_SIZE), file_src, file_dst], check=True)
 
 
 def build_image(target, source, env):

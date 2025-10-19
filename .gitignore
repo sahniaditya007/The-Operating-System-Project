@@ -15,6 +15,7 @@ __pycache__/
 *.err
 .sconsign.dblite
 bx_enh_dbg.ini
+.venv/
 
 # IDE/Editor-specific files (VSCode)
 .vscode/

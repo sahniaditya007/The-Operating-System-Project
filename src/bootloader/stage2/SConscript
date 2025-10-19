@@ -21,9 +21,24 @@ env.Append(
     ]
 )
 
-sources = GlobRecursive(env, '*.c') + \
-          GlobRecursive(env, '*.cpp') + \
-          GlobRecursive(env, '*.asm')
+# Collect sources and exclude legacy 16-bit main.asm that conflicts with main.c
+def flatten(nested):
+    flat = []
+    for group in nested:
+        if isinstance(group, list):
+            flat.extend(group)
+        else:
+            flat.append(group)
+    return flat
+
+c_sources = flatten(GlobRecursive(env, '*.c'))
+cpp_sources = flatten(GlobRecursive(env, '*.cpp'))
+asm_sources = flatten(GlobRecursive(env, '*.asm'))
+
+# Filter out main.asm to avoid duplicate main.o target
+asm_sources = [node for node in asm_sources if not IsFileName(node, 'main.asm')]
+
+sources = c_sources + cpp_sources + asm_sources
 
 objects = env.Object(sources)
 
@@ -31,9 +46,11 @@ obj_crti = objects.pop(FindIndex(objects, lambda item: IsFileName(item, 'crti.o'
 obj_crtn = objects.pop(FindIndex(objects, lambda item: IsFileName(item, 'crtn.o')))
 
 Import('libcore')
+Import('libstring')
 
 static_libs = [
     libcore,
+    libstring,
 ]
 
 objects = [

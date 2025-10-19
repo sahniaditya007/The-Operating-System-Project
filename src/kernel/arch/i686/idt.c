@@ -1,29 +1,35 @@
+/**
+ * @file idt.c
+ * @brief This file contains the implementation of the Interrupt Descriptor Table (IDT).
+ */
+
 #include "idt.h"
+
+void __attribute__((cdecl)) i686_IDT_Load(IDTDescriptor* idtDescriptor);
+#include "gdt_idt_asm.h"
 #include <stdint.h>
 #include <util/binary.h>
 
-typedef struct
-{
-    uint16_t BaseLow;
-    uint16_t SegmentSelector;
-    uint8_t Reserved;
-    uint8_t Flags;
-    uint16_t BaseHigh;
-} __attribute__((packed)) IDTEntry;
-
-typedef struct
-{
-    uint16_t Limit;
-    IDTEntry* Ptr;
-} __attribute__((packed)) IDTDescriptor;
 
 
+
+// The Interrupt Descriptor Table.
 IDTEntry g_IDT[256];
 
+// The IDT descriptor.
 IDTDescriptor g_IDTDescriptor = { sizeof(g_IDT) - 1, g_IDT };
 
-void __attribute__((cdecl)) i686_IDT_Load(IDTDescriptor* idtDescriptor);
+// External function to load the IDT.
 
+
+/**
+ * @brief Sets an IDT gate.
+ * 
+ * @param interrupt The interrupt number.
+ * @param base The base address of the interrupt handler.
+ * @param segmentDescriptor The segment descriptor.
+ * @param flags The flags.
+ */
 void i686_IDT_SetGate(int interrupt, void* base, uint16_t segmentDescriptor, uint8_t flags)
 {
     g_IDT[interrupt].BaseLow = ((uint32_t)base) & 0xFFFF;
@@ -33,17 +39,31 @@ void i686_IDT_SetGate(int interrupt, void* base, uint16_t segmentDescriptor, uin
     g_IDT[interrupt].BaseHigh = ((uint32_t)base >> 16) & 0xFFFF;
 }
 
+/**
+ * @brief Enables an IDT gate.
+ * 
+ * @param interrupt The interrupt number.
+ */
 void i686_IDT_EnableGate(int interrupt)
 {
     FLAG_SET(g_IDT[interrupt].Flags, IDT_FLAG_PRESENT);
 }
 
+/**
+ * @brief Disables an IDT gate.
+ * 
+ * @param interrupt The interrupt number.
+ */
 void i686_IDT_DisableGate(int interrupt)
 {
     FLAG_UNSET(g_IDT[interrupt].Flags, IDT_FLAG_PRESENT);
 }
 
+/**
+ * @brief Initializes the IDT.
+ */
 void i686_IDT_Initialize()
 {
+    // Load the IDT.
     i686_IDT_Load(&g_IDTDescriptor);
 }
