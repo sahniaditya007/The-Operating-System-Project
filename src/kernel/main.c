@@ -8,6 +8,7 @@
 #include <hal/hal.h>
 
 #include <arch/i686/irq.h>
+#include <arch/i686/io.h>
 
 #include <debug.h>
 
@@ -20,6 +21,10 @@
 #include <arch/i686/mouse.h>
 
 #include <arch/i686/fpu.h>
+
+#include <arch/i686/keyboard.h>
+
+#include <gui/gui.h>
 
 
 
@@ -49,7 +54,11 @@ void timer(Registers* regs)
 
 {
 
-    // printf(".");
+    (void)regs;
+
+    // Timer increments are handled in GUI loop
+
+    // This just ensures timer interrupts are working
 
 }
 
@@ -65,9 +74,14 @@ void timer(Registers* regs)
 
  */
 
+BootParams* g_BootParams = NULL;
+
 void start(BootParams* bootParams)
 
 {
+
+    // Store boot params globally
+    g_BootParams = bootParams;
 
     // Call global constructors
 
@@ -81,27 +95,14 @@ void start(BootParams* bootParams)
     // Initialize the Hardware Abstraction Layer (HAL).
     HAL_Initialize();
 
+    // Initialize mouse and keyboard
     mouse_install();
+    keyboard_install();
 
-
+    // CRITICAL: Ensure interrupts are enabled after device installation
+    i686_EnableInterrupts();
 
     vga_set_mode(0x13);
-
-    vga_put_pixel(10, 10, 15);
-
-    vga_put_pixel(11, 10, 7);
-
-    vga_put_pixel(12, 10, 8);
-
-
-
-    font_draw_char(20, 20, 'A', 15);
-
-
-
-    vga_draw_rect(30, 30, 50, 40, 15);
-
-    vga_fill_rect(90, 30, 50, 40, 7);
 
 
 
@@ -139,26 +140,33 @@ void start(BootParams* bootParams)
 
 
 
-    // Register a timer handler (commented out).
+    // Register a timer handler
+    i686_IRQ_RegisterHandler(0, timer);
+    
+    // Unmask timer interrupt
+    const PICDriver* pic = i686_IRQ_GetDriver();
+    if (pic) {
+        pic->Unmask(0);  // Timer IRQ
+    }
 
-    //i686_IRQ_RegisterHandler(0, timer);
+    // Initialize GUI system
+    gui_init();
+    
+    // CRITICAL: Ensure interrupts are still enabled before main loop
+    i686_EnableInterrupts();
+    
+    log_debug("Main", "GUI initialized, entering main loop");
 
-
-
-    // A test function to trigger a crash (commented out).
-
-    //crash_me();
-
-
-
-    // Halt the CPU.
-
+    // Main GUI loop
     while(1) {
-
-        vga_fill_rect(0, 0, 320, 200, 0);
-
-        draw_cursor(mouse_x, mouse_y, 15);
-
+        // Enable interrupts - they should already be enabled, but ensure it
+        __asm__ __volatile__("sti");
+        
+        gui_update();
+        
+        // Small delay to prevent CPU hogging
+        // Interrupts can still fire during this delay
+        for (volatile int i = 0; i < 10000; i++);
     }
 
 

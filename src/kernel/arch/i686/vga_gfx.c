@@ -11,6 +11,14 @@ void vga_set_mode(int mode) {
     (void)mode;
 }
 
+// Wait for vertical retrace to prevent flickering
+void vga_wait_vsync(void) {
+    // Wait for vertical retrace to end (bit 3 = 0)
+    while (i686_inb(0x3DA) & 0x08);
+    // Wait for vertical retrace to start (bit 3 = 1)
+    while (!(i686_inb(0x3DA) & 0x08));
+}
+
 void vga_put_pixel(int x, int y, uint8_t color) {
     if (x < 0 || x >= 320 || y < 0 || y >= 200) {
         return;
@@ -44,4 +52,11 @@ void vga_fill_rect(int x, int y, int width, int height, uint8_t color) {
             vga_put_pixel(x + j, y + i, color);
         }
     }
+}
+
+uint8_t vga_get_pixel(int x, int y) {
+    if (x < 0 || x >= 320 || y < 0 || y >= 200) {
+        return 0;
+    }
+    return g_vga_buffer[y * 320 + x];
 }

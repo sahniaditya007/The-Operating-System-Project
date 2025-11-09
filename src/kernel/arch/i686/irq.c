@@ -25,7 +25,17 @@ static const PICDriver* g_Driver = NULL;
  */
 void i686_IRQ_Handler(Registers* regs)
 {
+    // Safety check: ensure driver is available
+    if (g_Driver == NULL) {
+        return;
+    }
+    
     int irq = regs->interrupt - PIC_REMAP_OFFSET;
+    
+    // Bounds check for IRQ number
+    if (irq < 0 || irq >= 16) {
+        return;
+    }
     
     // If there is a registered handler for this IRQ, call it.
     if (g_IRQHandlers[irq] != NULL)
@@ -77,9 +87,9 @@ void i686_IRQ_Initialize()
     // Enable interrupts.
     i686_EnableInterrupts();
 
-    // Unmask the timer and keyboard interrupts (commented out).
-    // g_Driver->Unmask(0);
-    // g_Driver->Unmask(1);
+    // Unmask the timer and keyboard interrupts
+    g_Driver->Unmask(0);  // Timer
+    g_Driver->Unmask(1);  // Keyboard
 }
 
 /**

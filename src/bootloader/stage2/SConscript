@@ -46,11 +46,9 @@ obj_crti = objects.pop(FindIndex(objects, lambda item: IsFileName(item, 'crti.o'
 obj_crtn = objects.pop(FindIndex(objects, lambda item: IsFileName(item, 'crtn.o')))
 
 Import('libcore')
-Import('libstring')
 
 static_libs = [
     libcore,
-    libstring,
 ]
 
 objects = [

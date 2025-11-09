@@ -1,4 +1,5 @@
 #include "string.h"
+#include <stddef.h>
 
 void* memcpy(void* dst, const void* src, uint16_t num)
 {
@@ -31,4 +32,42 @@ int memcmp(const void* ptr1, const void* ptr2, uint16_t num)
             return 1;
 
     return 0;
+}
+
+unsigned strlen(const char* str)
+{
+    unsigned len = 0;
+    if (str == NULL)
+        return 0;
+    
+    while (*str)
+    {
+        ++len;
+        ++str;
+    }
+    
+    return len;
+}
+
+char* strcat(char* dst, const char* src)
+{
+    if (dst == NULL || src == NULL)
+        return dst;
+    
+    char* origDst = dst;
+    
+    // Find end of destination string
+    while (*dst)
+        ++dst;
+    
+    // Copy source to end of destination
+    while (*src)
+    {
+        *dst = *src;
+        ++dst;
+        ++src;
+    }
+    
+    *dst = '\0';
+    return origDst;
 }
