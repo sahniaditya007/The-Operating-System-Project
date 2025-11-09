@@ -6,8 +6,8 @@ A 32-bit operating system for the i686 architecture, built from scratch. This pr
 
 Here are some screenshots of the OS in action:
 
-![Screenshot 1](output%20images/img1.png)
 ![Screenshot 2](output%20images/img2.png)
+![Screenshot 1](output%20images/img1.png)
 ![Screenshot 3](output%20images/img3.png)
 ![Screenshot 4](output%20images/img4.png)
 
