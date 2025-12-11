@@ -1,7 +1,15 @@
 # Interview Quick Reference - Operating System Project
 
-## 30-Second Elevator Pitch
-*"I built a 32-bit operating system from scratch for the x86 architecture. It includes a custom bootloader, FAT filesystem support, hardware drivers for keyboard and mouse, and a graphical user interface with multiple applications. Everything is written in C and Assembly without using any existing OS or standard libraries."*
+## Elevator Pitches
+
+### 15-Second Version
+*"I built a 32-bit operating system from scratch in C and Assembly. It boots from disk, has a GUI with mouse and keyboard support, and includes multiple applications."*
+
+### 30-Second Version  
+*"I built a complete operating system for the x86 architecture. It has a custom bootloader, FAT filesystem, device drivers for keyboard and mouse, and a GUI with seven applications - all written from scratch without using any existing OS or libraries."*
+
+### 60-Second Version (for longer introductions)
+*"I built a 32-bit operating system from scratch for the x86 architecture. It includes a custom bootloader, FAT filesystem support, hardware drivers for keyboard and mouse, and a graphical user interface with multiple applications. Everything is written in C and Assembly without using any existing OS or standard libraries. The project demonstrates deep understanding of computer architecture, low-level programming, and operating system concepts."*
 
 ---
 
