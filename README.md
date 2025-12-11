@@ -94,6 +94,26 @@ scons bochs
 *   `tools`: Host-side tools for working with the filesystem.
 *   `SConstruct`: The main SCons build script.
 
+## Understanding the Code
+
+If you want to understand how this OS works (for interviews, learning, or contribution):
+
+📚 **[UNDERSTANDING_THE_CODE.md](UNDERSTANDING_THE_CODE.md)** - Comprehensive technical guide covering:
+- Complete architecture explanation
+- Boot process flow with diagrams
+- Detailed component breakdowns (HAL, GUI, drivers, memory)
+- Code examples with explanations
+- Technical challenges and solutions
+- Interview talking points
+
+⚡ **[INTERVIEW_QUICK_REFERENCE.md](INTERVIEW_QUICK_REFERENCE.md)** - Quick reference for interviews:
+- 30-second elevator pitch
+- Common interview Q&A
+- Key code snippets to memorize
+- Practice answers (60-second format)
+- Architecture diagrams
+- Technical statistics
+
 ## License
 
 This project is licensed under the MIT License.
